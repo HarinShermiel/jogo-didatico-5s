@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  /* Background mais vibrante com gradiente radial + textura sutil */
+  background:
+    radial-gradient(ellipse at 10% 0%, #1a6dbf 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 100%, #0d4a8a 0%, transparent 55%),
+    linear-gradient(160deg, #0e3460 0%, #0a2240 50%, #061528 100%);
+  color: #0f172a;
+  min-height: 100vh;
+}
+
+/* Padrão de pontos sutil no fundo */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Foco visível para acessibilidade por teclado. */
+:focus-visible {
+  outline: 3px solid #f47a20;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Flash de acerto */
+@keyframes flash-acerto {
+  0%   { box-shadow: 0 0 0 0 rgba(63, 163, 77, 0.8); }
+  50%  { box-shadow: 0 0 0 16px rgba(63, 163, 77, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 163, 77, 0); }
+}
+
+/* Flash de erro */
+@keyframes flash-erro {
+  0%   { box-shadow: 0 0 0 0 rgba(228, 87, 46, 0.8); }
+  50%  { box-shadow: 0 0 0 16px rgba(228, 87, 46, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(228, 87, 46, 0); }
+}
+
+.flash-acerto { animation: flash-acerto 0.5s ease-out; }
+.flash-erro   { animation: flash-erro 0.5s ease-out; }
+
+/* Card de item da bancada */
+.item-card {
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.item-card:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
