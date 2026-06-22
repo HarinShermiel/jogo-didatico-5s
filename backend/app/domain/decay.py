@@ -12,12 +12,12 @@ import random
 from .sensos import PHASE_ORDER, Senso
 
 # Pontos de radar perdidos por segundo de abandono, por eixo.
-DECAY_POR_SEGUNDO = 0.6
+DECAY_POR_SEGUNDO = 0.25
 DECAY_MAX_SEGUNDOS = 120.0
 
 # Desafio de sustentação (SHITSUKE): choques periódicos + meta cronometrada.
-INTERVALO_CHOQUE = 5.0   # a cada 5s, 2 setores levam um choque
-FATOR_CHOQUE = 0.8       # -20% multiplicativo no setor atingido
+INTERVALO_CHOQUE = 8.0   # a cada 8s, 2 setores levam um choque
+FATOR_CHOQUE = 0.9       # -10% multiplicativo no setor atingido
 META_SUSTENTACAO = 50.0  # média (score5s) mínima exigida
 DURACAO_DESAFIO = 30.0   # segundos contínuos ≥ meta para concluir
 
