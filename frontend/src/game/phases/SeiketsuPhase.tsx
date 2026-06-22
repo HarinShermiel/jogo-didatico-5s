@@ -1,9 +1,8 @@
-// SEIKETSU — Padronizar. Tire um snapshot do padrão; os itens embaralham e
-// você compara cada um com a foto de referência: conforme ou desvio de posição.
-import { motion } from 'framer-motion'
+// SEIKETSU — Memoriza a sequência → Embaralha → Reordena → Verifica.
+import { AnimatePresence, motion } from 'framer-motion'
+import { useRef, useState } from 'react'
 import { useGameStore } from '../../store/gameStore'
-import type { SeiketsuPhase as SeiketsuData, SeiketsuItem, SeiketsuSlot } from '../../types'
-import { Button } from '../../ui/Button'
+import type { SeiketsuPhase as SeiketsuData, SeiketsuSlot } from '../../types'
 import { ItemFigure } from '../ItemFigure'
 import { PhaseBackground } from '../PhaseBackground'
 
@@ -12,140 +11,208 @@ interface Props {
 }
 
 export function SeiketsuPhase({ fase }: Props): JSX.Element {
-  const dispatch = useGameStore((s) => s.dispatch)
+  const dispatch   = useGameStore((s) => s.dispatch)
+  const [esperando, setEsperando] = useState(false)
 
-  // Fase 1: memorizar o padrão antes de fotografar.
+  // ordem local — começa igual ao que o backend manda em `atual`
+  const [ordem, setOrdem] = useState<SeiketsuSlot[]>(() => [...fase.atual])
+
+  // sincroniza com backend quando `atual` muda (após verificar)
+  const prevAtual = useRef(fase.atual)
+  if (fase.atual !== prevAtual.current) {
+    prevAtual.current = fase.atual
+    setOrdem([...fase.atual])
+  }
+
+  // ── drag ref — deve ficar ANTES de qualquer return condicional ───────────
+  const dragIdx = useRef<number | null>(null)
+
+  const concluido = fase.atual.every((s) => s.acertou === true)
+
+  // ── Fase 1: Memorizar a sequência ────────────────────────────────────────
   if (!fase.snapshot) {
     return (
       <PhaseBackground senso="SEIKETSU">
-      <div className="flex min-h-screen items-center justify-center p-4 pt-24">
-        <div className="w-full max-w-3xl space-y-5 text-center">
-          <div>
-            <h2 className="text-lg font-black text-white">📐 Memorize o Padrão</h2>
-            <p className="mx-auto mt-1 max-w-md text-sm text-white/70">
-              Grave a posição de cada item: esta é a referência. Ao fotografar, eles vão se embaralhar.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {fase.atual.map((item) => (
-              <ItemCard key={item.id} item={item} />
-            ))}
-          </div>
-          <div className="flex justify-center pt-2">
-            <Button onClick={() => void dispatch('seiketsu.snapshot', {})} className="px-7 py-3 text-base">
-              📸 Tirar snapshot do padrão
-            </Button>
+        <div className="flex min-h-screen flex-col items-center justify-center p-4 pt-20">
+          <div className="w-full max-w-3xl space-y-5 text-center">
+            <div>
+              <h2 className="text-xl font-black text-white">📐 Memorize a Sequência</h2>
+              <p className="mt-1 text-sm text-white/70">
+                Grave a ordem dos itens. Ao embaralhar, você terá que recolocá-los na posição certa.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              {fase.referencia.map((item) => (
+                <motion.div
+                  key={item.id}
+                  layout
+                  className="flex flex-col items-center rounded-2xl bg-white p-4 text-center shadow-lg"
+                >
+                  <ItemFigure emoji={item.emoji} size={56} />
+                  <p className="mt-2 text-xs font-bold text-marca-azul">{item.nome}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setEsperando(true)
+                void dispatch('seiketsu.snapshot', {}).then(() => setEsperando(false))
+              }}
+              disabled={esperando}
+              className="rounded-2xl px-10 py-4 text-base font-black text-white shadow-xl transition hover:brightness-110 disabled:opacity-50"
+              style={{ background: '#f47a20' }}
+            >
+              {esperando ? '⏳ Embaralhando...' : '🔀 Embaralhar'}
+            </button>
           </div>
         </div>
-      </div>
       </PhaseBackground>
     )
   }
 
-  // Fase 2: comparar a fileira atual com a referência fotografada.
-  const avaliados = fase.atual.filter((s) => s.avaliado !== null).length
-  const concluido = avaliados === fase.atual.length && fase.atual.length > 0
+  // ── Fase 2: Reordenar ────────────────────────────────────────────────────
+  const onDragStart = (idx: number) => { dragIdx.current = idx }
+
+  const onDrop = (targetIdx: number) => {
+    const from = dragIdx.current
+    if (from === null || from === targetIdx) return
+    const next = [...ordem]
+    const [moved] = next.splice(from, 1)
+    if (moved === undefined) return
+    next.splice(targetIdx, 0, moved)
+    // limpa feedback local ao reordenar
+    setOrdem(next.map((s) => ({ ...s, acertou: null, avaliado: null })))
+    dragIdx.current = null
+  }
+
+  const doVerificar = () => {
+    if (esperando) return
+    setEsperando(true)
+    void dispatch('seiketsu.reordenar', { ids_ordem: ordem.map((s) => s.id) })
+      .then(() => setEsperando(false))
+  }
 
   return (
     <PhaseBackground senso="SEIKETSU">
-    <div className="flex min-h-screen items-center justify-center p-4 pt-24">
-      <div className="w-full max-w-3xl space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-black text-white">📐 Auditoria do Padrão</h2>
-            <p className="text-sm text-white/70">
-              Compare com a foto: <b>conforme</b> (mesma posição) ou <b>desvio</b> (mudou de lugar).
-            </p>
-          </div>
-          <div
-            className="rounded-full px-4 py-1.5 text-sm font-extrabold text-white shadow-lg transition-colors"
-            style={{ background: concluido ? '#3FA34D' : '#f47a20' }}
-          >
-            {avaliados}/{fase.atual.length} ✓
-          </div>
-        </div>
+      <div className="flex min-h-screen flex-col items-center justify-center p-4 pt-20">
+        <div className="w-full max-w-3xl space-y-5">
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {fase.atual.map((slot) => (
-            <SlotCard
-              key={slot.id}
-              slot={slot}
-              onAvaliar={(desvio) => void dispatch('seiketsu.avaliar', { spotId: slot.id, desvio })}
-            />
-          ))}
-        </div>
-
-        <div className="rounded-3xl bg-marca-azul/40 p-3 ring-1 ring-marca-laranja/40">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-marca-laranja">
-            📸 Padrão (referência)
-          </p>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-            {fase.referencia.map((item) => (
-              <ItemCard key={item.id} item={item} compact />
-            ))}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-white">📐 Recoloque na ordem certa</h2>
+              <p className="text-sm text-white/70">
+                Arraste os cards para reconstruir a sequência que você memorizou.
+              </p>
+            </div>
+            <div
+              className="rounded-full px-4 py-1.5 text-sm font-extrabold text-white shadow-lg"
+              style={{ background: concluido ? '#3FA34D' : '#f47a20' }}
+            >
+              {fase.atual.filter((s) => s.acertou === true).length}/{fase.atual.length} ✓
+            </div>
           </div>
+
+          {/* Grade drag-and-drop */}
+          <div className="grid grid-cols-3 gap-3">
+            {ordem.map((slot, idx) => {
+              // pega o feedback do backend (acertou) pelo id
+              const backendAcertou = fase.atual.find((s) => s.id === slot.id)?.acertou ?? null
+              return (
+                <DraggableCard
+                  key={slot.id}
+                  slot={{ ...slot, acertou: backendAcertou }}
+                  onDragStart={() => onDragStart(idx)}
+                  onDrop={() => onDrop(idx)}
+                />
+              )
+            })}
+          </div>
+
+          {/* Botões */}
+          <div className="flex justify-center gap-4">
+            {!concluido && (
+              <button
+                onClick={doVerificar}
+                disabled={esperando}
+                className="rounded-2xl px-10 py-3 text-sm font-black text-white shadow-xl transition hover:brightness-110 disabled:opacity-50"
+                style={{ background: '#f47a20' }}
+              >
+                {esperando ? '⏳ Verificando...' : '✅ Verificar ordem'}
+              </button>
+            )}
+          </div>
+
+          {/* Concluído */}
+          <AnimatePresence>
+            {concluido && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl bg-green-500/80 py-4 text-center font-black text-white shadow-xl"
+              >
+                🏆 Sequência perfeita! Padrão documentado.
+              </motion.div>
+            )}
+          </AnimatePresence>
+
         </div>
       </div>
-    </div>
     </PhaseBackground>
   )
 }
 
-function ItemCard({ item, compact = false }: { item: SeiketsuItem; compact?: boolean }): JSX.Element {
-  return (
-    <motion.div
-      layout
-      className="flex flex-col items-center rounded-2xl bg-white p-3 text-center shadow-lg"
-      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-    >
-      <ItemFigure emoji={item.emoji} size={compact ? 36 : 56} />
-      <p className={`mt-1 font-bold text-marca-azul ${compact ? 'text-[10px]' : 'text-xs'}`}>{item.nome}</p>
-    </motion.div>
-  )
-}
-
-interface SlotProps {
+// ─── Card arrastável ─────────────────────────────────────────────────────────
+interface CardProps {
   slot: SeiketsuSlot
-  onAvaliar: (desvio: boolean) => void
+  onDragStart: () => void
+  onDrop: () => void
 }
 
-function SlotCard({ slot, onAvaliar }: SlotProps): JSX.Element {
+function DraggableCard({ slot, onDragStart, onDrop }: CardProps): JSX.Element {
+  const [over, setOver] = useState(false)
+
+  const borderColor = slot.acertou === true
+    ? '#3FA34D'
+    : slot.acertou === false
+      ? '#ef4444'
+      : over ? '#f47a20' : 'rgba(0,0,0,0.08)'
+
+  const shadow = slot.acertou === true
+    ? '0 0 18px rgba(63,163,77,0.5)'
+    : slot.acertou === false
+      ? '0 0 18px rgba(239,68,68,0.5)'
+      : over ? '0 0 18px rgba(244,122,32,0.45)' : '0 4px 16px rgba(0,0,0,0.12)'
+
   return (
     <motion.div
       layout
-      className="flex flex-col items-center rounded-2xl bg-white p-3 text-center shadow-xl"
-      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); onDrop() }}
+      className="flex flex-col items-center rounded-2xl bg-white p-4 text-center select-none"
+      style={{
+        cursor: 'grab',
+        border: `2.5px solid ${borderColor}`,
+        boxShadow: shadow,
+        transition: 'border-color 0.2s, box-shadow 0.2s',
+      }}
+      animate={{ scale: over ? 1.04 : 1 }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
     >
-      <ItemFigure emoji={slot.emoji} size={56} />
-      <p className="mt-1 text-xs font-bold text-marca-azul">{slot.nome}</p>
-      {slot.avaliado === null ? (
-        <div className="mt-2 flex w-full gap-1.5">
-          <button
-            onClick={() => onAvaliar(false)}
-            className="flex-1 rounded-xl bg-senso-seiso px-1 py-1.5 text-[11px] font-bold text-white transition hover:brightness-110"
-            aria-label={`${slot.nome} está na posição do padrão (conforme)`}
-          >
-            ✓ Conforme
-          </button>
-          <button
-            onClick={() => onAvaliar(true)}
-            className="flex-1 rounded-xl bg-senso-seiri px-1 py-1.5 text-[11px] font-bold text-white transition hover:brightness-110"
-            aria-label={`${slot.nome} mudou de posição (desvio)`}
-          >
-            ⚠ Desvio
-          </button>
-        </div>
-      ) : (
-        <motion.p
-          initial={{ scale: 0.7, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 18 }}
-          className={`mt-2 text-xs font-bold ${slot.acertou ? 'text-senso-seiso' : 'text-red-500'}`}
-        >
-          {slot.acertou ? '✅ ' : '❌ '}
-          {slot.avaliado ? 'Desvio' : 'Conforme'}
-        </motion.p>
-      )}
+      <ItemFigure emoji={slot.emoji} size={52} />
+      <p className="mt-2 text-xs font-bold text-marca-azul leading-tight">{slot.nome}</p>
+
+      <AnimatePresence>
+        {slot.acertou === true && (
+          <motion.span key="ok" initial={{ scale: 0 }} animate={{ scale: 1 }} className="mt-1 text-base">✅</motion.span>
+        )}
+        {slot.acertou === false && (
+          <motion.span key="err" initial={{ scale: 0 }} animate={{ scale: 1 }} className="mt-1 text-base">❌</motion.span>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }

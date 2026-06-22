@@ -137,6 +137,8 @@ class GameState:
     shitsuke_sustain_since: float | None = None
     shitsuke_sustentado: bool = False
     shitsuke_restante: float = DURACAO_DESAFIO
+    shitsuke_pergunta: Desafio | None = None   # pergunta ativa do quiz de sustentação
+    shitsuke_perguntas_respondidas: int = 0    # contador para variar as situações
 
     def phase_unlocked(self, senso: Senso) -> bool:
         """Uma fase está liberada se todas as anteriores passaram do patamar."""
@@ -197,6 +199,14 @@ def public_view(state: GameState) -> dict[str, object]:
             "metaMedia": int(META_SUSTENTACAO),
             "restanteSeg": round(state.shitsuke_restante, 1),
             "duracaoSeg": int(DURACAO_DESAFIO),
+            "pergunta": (
+                {
+                    "situacaoId": state.shitsuke_pergunta.situacao_id,
+                    "texto": state.shitsuke_pergunta.texto,
+                }
+                if state.shitsuke_pergunta is not None and not state.shitsuke_pergunta.resolvido
+                else None
+            ),
         },
     }
 
@@ -240,14 +250,16 @@ def _public_phases(state: GameState) -> dict[str, object]:
             ],
             # ordem exibida na div de cima; antes do snapshot = referência, depois = embaralhada.
             # As posições são apresentação (o jogador compara visualmente); o gabarito não é exposto.
+            # ordenado pela posicao_atual (ordem que o usuário arranjou)
             "atual": [
                 {
                     "id": s.id,
                     "nome": s.nome,
                     "emoji": s.emoji,
                     "avaliado": s.avaliado_como_desvio,
+                    # acertou = True se posição atual == correta (snapshot avalia isso)
                     "acertou": (
-                        (s.avaliado_como_desvio == (s.posicao_atual != s.posicao_correta))
+                        (s.posicao_atual == s.posicao_correta)
                         if s.avaliado_como_desvio is not None
                         else None
                     ),

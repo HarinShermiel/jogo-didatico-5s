@@ -1,13 +1,29 @@
-// SEITON — A prateleira pede um item. O usuário acha na esteira e arrasta até o slot.
-// Esteira corre em CSS animation pura (loop contínuo, sem reset visível).
+// SEITON — Slots absolutamente posicionados nas prateleiras reais do fundo.
+// Um slot por vez aparece (silhueta piscando). Itens passam na esteira.
 import { AnimatePresence, motion } from 'framer-motion'
-import { useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useGameStore } from '../../store/gameStore'
 import type { SeitonItem } from '../../types'
 import { ItemFigure } from '../ItemFigure'
 
-// Espaçamento fixo por vaga na esteira (px)
-const SLOT_W = 220
+const SLOT_W = 200
+const BELT_H = 148
+
+// Posições absolutas sobre as estantes do fundo — 3 colunas × 3 fileiras.
+// Colunas: esq 37%, centro 50%, dir 63% da largura total.
+// Fileiras: os itens ficam SOBRE a prateleira, transform ancora na base do item.
+// 1ª prateleira ~30%, 2ª ~54%, 3ª ~76% do topo da área de prateleira.
+const SHELF_POSITIONS = [
+  { left: '37%', top: '40%' },  // 0 — esq,    1ª fileira
+  { left: '50%', top: '40%' },  // 1 — centro, 1ª fileira
+  { left: '63%', top: '40%' },  // 2 — dir,    1ª fileira
+  { left: '37%', top: '54%' },  // 3 — esq,    2ª fileira
+  { left: '50%', top: '54%' },  // 4 — centro, 2ª fileira
+  { left: '63%', top: '54%' },  // 5 — dir,    2ª fileira
+  { left: '37%', top: '70%' },  // 6 — esq,    3ª fileira
+  { left: '50%', top: '70%' },  // 7 — centro, 3ª fileira
+  { left: '63%', top: '70%' },  // 8 — dir,    3ª fileira
+]
 
 interface Props {
   itens: SeitonItem[]
@@ -15,14 +31,22 @@ interface Props {
 
 export function SeitonPhase({ itens }: Props): JSX.Element {
   const dispatch  = useGameStore((s) => s.dispatch)
-  const pendentes = itens.filter((i) => i.encaixadoEm === null)
   const colocados = itens.filter((i) => i.encaixadoEm === i.slot)
   const concluido = colocados.length === itens.length && itens.length > 0
   const alvo      = itens.find((i) => i.encaixadoEm === null) ?? null
 
-  const slotRefs  = useRef<Record<string, HTMLDivElement | null>>({})
   const [bloqueado, setBloqueado] = useState(false)
   const [errou, setErrou]         = useState<string | null>(null)
+
+  // Embaralha a ordem da esteira uma única vez no mount
+  const ordemEsteira = useMemo(() => {
+    const arr = [...itens]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j]!, arr[i]!]
+    }
+    return arr
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tentar = (itemId: string, slot: string): void => {
     if (bloqueado) return
@@ -51,110 +75,125 @@ export function SeitonPhase({ itens }: Props): JSX.Element {
       className="fixed inset-0 flex flex-col"
       style={{ backgroundImage: 'url(/bancada-seiton.png)', backgroundSize: 'cover', backgroundPosition: 'center' }}
     >
-      <div className="absolute inset-0 bg-black/45" />
+      <div className="absolute inset-0 bg-black/25" />
 
-      {/* ── Prateleira ─────────────────────────────────────────────── */}
-      <div className="relative z-10 flex flex-1 items-center justify-center pt-16">
-        <div className="w-full max-w-3xl px-6">
-
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm font-bold text-white/80">
-              {alvo !== null
-                ? <>Ache <span className="text-marca-laranja font-black">{alvo.nome}</span> na esteira e arraste até o slot piscando</>
-                : '🏆 Tudo no lugar!'}
-            </p>
-            <div
-              className="rounded-full px-3 py-1 text-sm font-extrabold text-white"
-              style={{ background: concluido ? '#3FA34D' : '#f47a20' }}
-            >
-              {colocados.length}/{itens.length} ✓
-            </div>
-          </div>
-
-          <div
-            className="rounded-2xl p-4"
-            style={{ background: 'rgba(20,30,50,0.72)', backdropFilter: 'blur(6px)', border: '1.5px solid rgba(255,255,255,0.12)' }}
-          >
-            <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/40">🗄️ Prateleira</p>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {itens.map((item) => {
-                const colocado = item.encaixadoEm === item.slot
-                const éAlvo   = alvo?.id === item.id && !colocado
-                return (
-                  <motion.div
-                    key={item.slot}
-                    ref={(el) => { slotRefs.current[item.slot] = el }}
-                    onDragOver={onSlotDragOver}
-                    onDrop={(e) => onSlotDrop(e, item.slot)}
-                    className="relative flex aspect-square flex-col items-center justify-center rounded-xl border-2 border-dashed"
-                    animate={
-                      éAlvo
-                        ? { borderColor: ['#f47a20', '#ffffff', '#f47a20'], backgroundColor: ['rgba(244,122,32,0.12)', 'rgba(244,122,32,0.32)', 'rgba(244,122,32,0.12)'], scale: [1, 1.05, 1] }
-                        : colocado
-                          ? { borderColor: '#3FA34D', backgroundColor: 'rgba(63,163,77,0.15)', scale: 1 }
-                          : { borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(255,255,255,0.04)', scale: 1 }
-                    }
-                    transition={éAlvo ? { duration: 0.85, repeat: Infinity } : { duration: 0.2 }}
-                  >
-                    <AnimatePresence mode="wait">
-                      {colocado ? (
-                        <motion.div key="ok" className="flex flex-col items-center gap-0.5"
-                          initial={{ scale: 0, rotate: -15 }} animate={{ scale: 1, rotate: 0 }}
-                          transition={{ type: 'spring', stiffness: 360, damping: 18 }}>
-                          <ItemFigure emoji={item.emoji} size={44} />
-                          <span className="text-[8px] font-bold text-white/80 text-center leading-tight truncate w-full px-1">{item.nome}</span>
-                          <span className="text-green-400 text-xs">✅</span>
-                        </motion.div>
-                      ) : (
-                        <motion.div key="vazio" className="flex flex-col items-center gap-0.5"
-                          style={{ opacity: éAlvo ? 0.75 : 0.22 }}>
-                          <ItemFigure emoji={item.emoji} size={40} grayscale />
-                          <span className="text-[8px] font-bold text-white/50 text-center">{item.slot.replace('slot-', '').toUpperCase()}</span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                )
-              })}
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {concluido && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                className="mt-4 rounded-2xl bg-green-500/80 py-3 text-center font-black text-white shadow-xl">
-                🏆 Tudo no lugar! Avance para o próximo senso.
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {/* ── HUD ────────────────────────────────────────────────────── */}
+      <div className="relative z-10 flex items-center justify-between px-6 pt-3 pb-2 shrink-0">
+        <p className="text-sm font-bold text-white drop-shadow-lg">
+          {alvo !== null
+            ? <>Arraste <span className="text-marca-laranja font-black">{alvo.nome}</span> para o slot piscando na prateleira</>
+            : '🏆 Tudo no lugar!'}
+        </p>
+        <div
+          className="rounded-full px-3 py-1 text-sm font-extrabold text-white shadow-lg"
+          style={{ background: concluido ? '#3FA34D' : '#f47a20' }}
+        >
+          {colocados.length}/{itens.length} ✓
         </div>
       </div>
 
+      {/* ── Área das prateleiras — ocupa tudo acima da esteira ───────── */}
+      <div
+        className="relative z-10 flex-1"
+        style={{ marginBottom: BELT_H }}
+      >
+        {itens.map((item, idx) => {
+          const pos      = SHELF_POSITIONS[idx % SHELF_POSITIONS.length] ?? SHELF_POSITIONS[0]!
+          const colocado = item.encaixadoEm === item.slot
+          const éAlvo   = alvo?.id === item.id && !colocado
+
+          return (
+            <motion.div
+              key={item.slot}
+              onDragOver={onSlotDragOver}
+              onDrop={(e) => onSlotDrop(e, item.slot)}
+              className="absolute flex flex-col items-center justify-end rounded-xl"
+              style={{
+                left: pos.left,
+                top:  pos.top,
+                transform: 'translate(-50%, -100%)',  // centraliza no ponto e ancora na base da prateleira
+                width: 90,
+                height: 90,
+              }}
+              animate={
+                éAlvo
+                  ? {
+                      backgroundColor: ['rgba(244,122,32,0.0)', 'rgba(244,122,32,0.15)', 'rgba(244,122,32,0.0)'],
+                      boxShadow: ['0 0 0px rgba(244,122,32,0)', '0 0 28px rgba(244,122,32,0.7)', '0 0 0px rgba(244,122,32,0)'],
+                    }
+                  : colocado
+                    ? { backgroundColor: 'rgba(63,163,77,0.1)', boxShadow: '0 0 16px rgba(63,163,77,0.4)' }
+                    : { backgroundColor: 'transparent', boxShadow: 'none' }
+              }
+              transition={éAlvo ? { duration: 0.8, repeat: Infinity } : { duration: 0.2 }}
+            >
+              <AnimatePresence mode="wait">
+                {colocado ? (
+                  <motion.div key="ok" className="flex flex-col items-center gap-0.5"
+                    initial={{ scale: 0, y: 12 }} animate={{ scale: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 18 }}>
+                    <ItemFigure emoji={item.emoji} size={52} />
+                    <span className="text-[8px] font-bold text-white text-center leading-tight drop-shadow-lg">{item.nome}</span>
+                    <span className="text-green-400 text-xs">✅</span>
+                  </motion.div>
+                ) : éAlvo ? (
+                  <motion.div key="silhueta" className="flex flex-col items-center gap-0.5"
+                    animate={{ opacity: [0.15, 0.85, 0.15] }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}>
+                    <ItemFigure emoji={item.emoji} size={50} grayscale />
+                    <span className="text-[9px] font-black text-marca-laranja drop-shadow-lg">aqui!</span>
+                  </motion.div>
+                ) : (
+                  <div key="vazio" />
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )
+        })}
+
+        <AnimatePresence>
+          {concluido && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-2xl bg-green-500/85 px-8 py-3 text-center font-black text-white shadow-xl whitespace-nowrap"
+            >
+              🏆 Tudo no lugar! Avance para o próximo senso.
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* ── Esteira ─────────────────────────────────────────────────── */}
-      <div className="relative z-10 shrink-0 overflow-hidden" style={{ height: 156 }}>
-        <div className="absolute inset-0 bg-gray-900/85 border-t-4 border-gray-600" />
-
-        {/* Listras CSS puras — nunca param */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 overflow-hidden" style={{ height: BELT_H }}>
+        <div className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(180deg, #1c2233 0%, #0e1320 100%)',
+            borderTop: '5px solid #2d3748',
+          }}
+        />
         <BeltStripes />
+        <div className="absolute top-2 bottom-2 left-0 w-3"
+          style={{ background: 'linear-gradient(90deg, #374151, #4b5563)' }} />
+        <div className="absolute top-2 bottom-2 right-0 w-3"
+          style={{ background: 'linear-gradient(270deg, #374151, #4b5563)' }} />
 
-        {pendentes.length === 0 ? (
+        {concluido ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-sm font-bold text-white/50">Esteira vazia!</p>
+            <p className="text-sm font-bold text-white/40">Esteira vazia</p>
           </div>
         ) : (
-          <Belt itens={pendentes} errou={errou} alvoId={alvo?.id ?? null} />
+          <Belt itens={ordemEsteira} errou={errou} />
         )}
       </div>
 
-      {/* Injeção do keyframe CSS */}
       <style>{`
         @keyframes belt-scroll {
           from { transform: translateX(0); }
           to   { transform: translateX(-50%); }
         }
         @keyframes belt-stripe {
-          from { left: 0%; }
-          to   { left: -7.15%; }
+          from { transform: skewX(-20deg) translateX(0); }
+          to   { transform: skewX(-20deg) translateX(-64px); }
         }
       `}</style>
     </div>
@@ -163,16 +202,12 @@ export function SeitonPhase({ itens }: Props): JSX.Element {
 
 function BeltStripes(): JSX.Element {
   return (
-    <div className="absolute inset-0 overflow-hidden opacity-35 pointer-events-none">
-      {Array.from({ length: 14 }, (_, i) => (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ opacity: 0.15 }}>
+      {Array.from({ length: 32 }, (_, i) => (
         <div
           key={i}
-          className="absolute top-0 bottom-0 w-7 bg-gray-500"
-          style={{
-            left: `${(i / 14) * 100}%`,
-            transform: 'skewX(-18deg)',
-            animation: 'belt-stripe 1.4s linear infinite',
-          }}
+          className="absolute top-0 bottom-0 bg-white"
+          style={{ left: `${i * 64}px`, width: '32px', animation: 'belt-stripe 1.4s linear infinite' }}
         />
       ))}
     </div>
@@ -180,67 +215,55 @@ function BeltStripes(): JSX.Element {
 }
 
 function Belt({
-  itens, errou, alvoId,
+  itens, errou,
 }: {
   itens: SeitonItem[]
   errou: string | null
-  alvoId: string | null
 }): JSX.Element {
-  // Duplica para loop: desloca 50% do total = comprimento de uma cópia
+  // Array fixo (todos os itens, sempre) → animation nunca reinicia
   const loop     = [...itens, ...itens]
   const totalPx  = itens.length * SLOT_W
-  const duration = itens.length * 5  // s — quanto mais itens, mais devagar
+  const duration = itens.length * 4.5
 
   return (
     <div className="absolute inset-0 flex items-center overflow-hidden">
       <div
         style={{
           display: 'flex',
-          width: totalPx * 2,          // 2 cópias
+          width: totalPx * 2,
           animation: `belt-scroll ${duration}s linear infinite`,
           willChange: 'transform',
         }}
       >
         {loop.map((item, idx) => {
-          const isAlvo  = item.id === alvoId
-          const isErrou = item.id === errou
+          const isErrou    = item.id === errou
+          const colocado   = item.encaixadoEm === item.slot
           return (
             <div
               key={`${item.id}-${idx}`}
               style={{ width: SLOT_W, display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}
             >
               <motion.div
-                animate={
-                  isErrou
-                    ? { x: [0, -10, 10, -8, 8, 0], rotate: [0, -5, 5, -3, 3, 0] }
-                    : isAlvo
-                      ? { y: [0, -8, 0] }
-                      : {}
-                }
-                transition={
-                  isErrou
-                    ? { duration: 0.5 }
-                    : isAlvo
-                      ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }
-                      : {}
-                }
+                animate={isErrou ? { x: [0, -10, 10, -8, 8, 0], rotate: [0, -5, 5, -3, 3, 0] } : {}}
+                transition={isErrou ? { duration: 0.45 } : {}}
               >
                 <div
-                  draggable
-                  onDragStart={(e: React.DragEvent) => { e.dataTransfer.setData('itemId', item.id) }}
-                  onDragEnd={(e: React.DragEvent) => {
-                    // drop fora de slot — ignora
-                    e.preventDefault()
+                  draggable={!colocado}
+                  onDragStart={(e: React.DragEvent) => {
+                    if (colocado) { e.preventDefault(); return }
+                    e.dataTransfer.setData('itemId', item.id)
                   }}
-                  className="flex w-24 flex-col items-center rounded-2xl bg-white px-2 py-3 shadow-xl cursor-grab active:cursor-grabbing select-none"
+                  className="flex flex-col items-center rounded-xl bg-white px-3 py-3 shadow-xl select-none"
                   style={{
-                    border:  isAlvo ? '3px solid #f47a20' : '2px solid rgba(0,0,0,0.08)',
-                    opacity: isAlvo ? 1 : 0.75,
-                    filter:  isAlvo ? 'drop-shadow(0 0 14px rgba(244,122,32,0.9))' : 'none',
+                    border:  '2px solid rgba(0,0,0,0.1)',
+                    opacity: colocado ? 0.25 : 1,
+                    cursor:  colocado ? 'default' : 'grab',
+                    width: 88,
                   }}
                 >
-                  <ItemFigure emoji={item.emoji} size={46} />
+                  <ItemFigure emoji={item.emoji} size={44} />
                   <span className="mt-1 text-[9px] font-bold text-center text-marca-azul leading-tight">{item.nome}</span>
+                  {colocado && <span className="text-green-500 text-[10px]">✅</span>}
                 </div>
               </motion.div>
             </div>

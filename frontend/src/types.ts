@@ -77,12 +77,18 @@ export interface Desafio {
   resolvido: boolean;
 }
 
+export interface ShitsukePergunta {
+  situacaoId: number;
+  texto: string;
+}
+
 export interface ShitsukeDesafio {
   ativo: boolean;
   sustentado: boolean;
   metaMedia: number;
   restanteSeg: number;
   duracaoSeg: number;
+  pergunta: ShitsukePergunta | null;
 }
 
 export interface GameState {
