@@ -57,6 +57,11 @@ def to_json(state: GameState) -> str:
         "shitsuke_sustain_since": state.shitsuke_sustain_since,
         "shitsuke_sustentado": state.shitsuke_sustentado,
         "shitsuke_restante": state.shitsuke_restante,
+        "shitsuke_perguntas_respondidas": state.shitsuke_perguntas_respondidas,
+        "shitsuke_pergunta": (
+            None if state.shitsuke_pergunta is None
+            else vars(state.shitsuke_pergunta)
+        ),
     }
     return json.dumps(payload)
 
@@ -182,4 +187,13 @@ def from_json(raw: str) -> GameState:
         ),
         shitsuke_sustentado=_bool(d, "shitsuke_sustentado"),
         shitsuke_restante=_float(d, "shitsuke_restante"),
+        shitsuke_perguntas_respondidas=int(d.get("shitsuke_perguntas_respondidas") or 0),
+        shitsuke_pergunta=(
+            Desafio(
+                situacao_id=_int(d["shitsuke_pergunta"], "situacao_id"),
+                texto=_str(d["shitsuke_pergunta"], "texto"),
+                resolvido=_bool(d["shitsuke_pergunta"], "resolvido"),
+            )
+            if isinstance(d.get("shitsuke_pergunta"), dict) else None
+        ),
     )

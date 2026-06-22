@@ -43,6 +43,12 @@ _SEITON_POOL: tuple[tuple[str, str, str, bool], ...] = (
     ("Lubrificante spray", "🛢️", "slot-d", False),
     ("Trena 5m", "📏", "slot-e", True),
     ("Nível de bolha", "📐", "slot-f", False),
+    ("Parafuso M8", "🔩", "slot-g", True),
+    ("Estilete retrátil", "🔪", "slot-h", False),
+    ("Fita isolante", "🎗️", "slot-i", True),
+    ("Chave philips", "🪛", "slot-j", True),
+    ("Óculos de proteção", "🥽", "slot-k", False),
+    ("Lanterna LED", "🔦", "slot-l", False),
 )
 
 # (nome, emoji, descrição revelada ao limpar, is_anomalia). Os mundanos têm
@@ -63,6 +69,12 @@ _SEIKETSU_POOL: tuple[tuple[str, str], ...] = (
     ("Quadro de gestão à vista", "📋"),
     ("Sinalização de extintor", "🧯"),
     ("Identificação de tubulação", "🎨"),
+    ("Placa de EPI obrigatório", "🦺"),
+    ("Marcação de saída de emergência", "🚪"),
+    ("Etiqueta de equipamento", "🔖"),
+    ("Registro de manutenção", "📝"),
+    ("Sinalização de produto químico", "⚗️"),
+    ("Mapa de risco da área", "🗺️"),
 )
 
 _SHITSUKE_TEXTOS: dict[Senso, str] = {
@@ -89,7 +101,7 @@ def gen_seiri(seed: int) -> list[SeiriItem]:
 
 def gen_seiton(seed: int) -> list[SeitonItem]:
     rng = _rng(seed, 2)
-    escolhidos = rng.sample(_SEITON_POOL, k=5)
+    escolhidos = rng.sample(_SEITON_POOL, k=9)
     return [
         SeitonItem(id=f"seiton-{i}", nome=n, emoji=e, slot=slot, ergonomico=ergo)
         for i, (n, e, slot, ergo) in enumerate(escolhidos)
@@ -107,12 +119,26 @@ def gen_seiso(seed: int) -> list[SeisoTile]:
 
 def gen_seiketsu(seed: int) -> list[SeiketsuSpot]:
     rng = _rng(seed, 4)
-    escolhidos = rng.sample(_SEIKETSU_POOL, k=6)
-    # A ordem inicial é o padrão de referência; o embaralhamento vem no snapshot.
+    escolhidos = rng.sample(_SEIKETSU_POOL, k=9)
     return [
         SeiketsuSpot(id=f"seiketsu-{i}", nome=n, emoji=e, posicao_correta=i)
         for i, (n, e) in enumerate(escolhidos)
     ]
+
+
+def gen_seiketsu_embaralhado(seed: int) -> list[SeiketsuSpot]:
+    """Gera os spots já com posicao_atual embaralhada (≠ posicao_correta)."""
+    spots = gen_seiketsu(seed)
+    rng = _rng(seed, 6)
+    posicoes = list(range(len(spots)))
+    # embaralha até garantir que ao menos 1 está fora do lugar
+    while True:
+        rng.shuffle(posicoes)
+        if any(p != i for i, p in enumerate(posicoes)):
+            break
+    for spot, pos in zip(spots, posicoes):
+        spot.posicao_atual = pos
+    return spots
 
 
 def shuffle_seiketsu(seed: int, n: int) -> list[int]:
@@ -136,5 +162,14 @@ def next_desafio(seed: int, acao_idx: int) -> Desafio:
     """Escolhe uma situação do banco das 100 para o Desafio do Mestre."""
     ids = situacoes.all_ids()
     rng = _rng(seed, 100 + acao_idx)
+    sid = rng.choice(ids)
+    return Desafio(situacao_id=sid, texto=situacoes.texto(sid))
+
+
+def next_shitsuke_pergunta(seed: int, respondidas: int) -> Desafio:
+    """Escolhe uma situação do banco para o quiz de sustentação do Shitsuke.
+    Salt distinto de next_desafio para não repetir as mesmas situações."""
+    ids = situacoes.all_ids()
+    rng = _rng(seed, 500 + respondidas)
     sid = rng.choice(ids)
     return Desafio(situacao_id=sid, texto=situacoes.texto(sid))

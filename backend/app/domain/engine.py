@@ -104,12 +104,16 @@ def apply(state: GameState, ctype: str, payload: dict[str, object], now: float) 
         return _seiso_limpar(state, payload)
     if ctype == "seiso.decidir":
         return _seiso_decidir(state, payload)
+    if ctype == "seiketsu.reordenar":
+        return _seiketsu_reordenar(state, payload)
     if ctype == "seiketsu.snapshot":
         return _seiketsu_snapshot(state)
     if ctype == "seiketsu.avaliar":
         return _seiketsu(state, payload)
     if ctype == "shitsuke.corrigir":
         return _shitsuke(state, payload, now)
+    if ctype == "shitsuke.responder":
+        return _shitsuke_responder(state, payload, now)
     if ctype == "shitsuke.tick":
         _processar_shitsuke(state, now)
         return CommandOutcome(None, "pergunta", "A entropia avança — sustente o padrão!")
@@ -216,13 +220,38 @@ def _recompute_seiso(state: GameState) -> None:
     _set_radar(state, Senso.SEISO, corretos, len(state.seiso))
 
 
+def _seiketsu_reordenar(state: GameState, payload: dict[str, object]) -> CommandOutcome:
+    """Recebe ids_ordem: list[str] — sequência que o usuário arranjou.
+    Avalia cada posição vs posicao_correta e dá feedback verde/vermelho."""
+    if not state.seiketsu_snapshot:
+        return CommandOutcome(None, "pergunta", "Embaralhe primeiro.")
+    raw_ids = payload.get("ids_ordem")
+    ids: list[str] = [str(x) for x in raw_ids] if isinstance(raw_ids, list) else []
+    id_to_pos = {sid: pos for pos, sid in enumerate(ids)}
+    corretos = 0
+    for spot in state.seiketsu:
+        if spot.id in id_to_pos:
+            spot.posicao_atual = id_to_pos[spot.id]
+        certo = spot.posicao_atual == spot.posicao_correta
+        spot.avaliado_como_desvio = not certo
+        if certo:
+            corretos += 1
+    _set_radar(state, Senso.SEIKETSU, corretos, len(state.seiketsu))
+    tudo_certo = corretos == len(state.seiketsu)
+    if tudo_certo:
+        state.score += scoring.PONTOS_DECISAO * len(state.seiketsu)
+        return CommandOutcome(True, "comemora", "Perfeito! Sequência correta!")
+    return CommandOutcome(False, "pergunta", f"{corretos}/{len(state.seiketsu)} corretos. Ajuste os vermelhos!")
+
+
 def _seiketsu_snapshot(state: GameState) -> CommandOutcome:
+    """Embaralha a sequência (estado visível) para o jogador reordenar."""
     if not state.seiketsu_snapshot:
         perm = content.shuffle_seiketsu(state.seed, len(state.seiketsu))
         for spot in state.seiketsu:
             spot.posicao_atual = perm[spot.posicao_correta]
         state.seiketsu_snapshot = True
-    return CommandOutcome(None, "pergunta", "Padrão fotografado! Compare cada item com a foto: conforme ou desvio?")
+    return CommandOutcome(None, "pergunta", "Sequência embaralhada! Arraste para recolocar na ordem correta.")
 
 
 def _seiketsu_desvio(spot: SeiketsuSpot) -> bool:
@@ -266,6 +295,63 @@ def _shitsuke(state: GameState, payload: dict[str, object], now: float) -> Comma
     return CommandOutcome(True, "aprova", "Auditoria corrigida — disciplina sustenta o 5S!")
 
 
+BUMP_ACERTO_QUIZ = 12.0   # pontos de radar ganhos por acerto no quiz
+PENALIDADE_ERRO_QUIZ = 8.0  # pontos de radar perdidos por erro/timeout
+
+
+def _shitsuke_responder(state: GameState, payload: dict[str, object], now: float) -> CommandOutcome:
+    """Valida resposta do quiz de sustentação e gera a próxima pergunta."""
+    _processar_shitsuke(state, now)
+    if state.shitsuke_pergunta is None or state.shitsuke_pergunta.resolvido:
+        # Sem pergunta ativa — gera uma nova
+        state.shitsuke_perguntas_respondidas += 1
+        state.shitsuke_pergunta = content.next_shitsuke_pergunta(
+            state.seed, state.shitsuke_perguntas_respondidas
+        )
+        return CommandOutcome(None, "pergunta", "Próxima situação!")
+
+    timeout = payload.get("timeout") is True
+    if timeout:
+        # Tempo esgotado — penaliza o radar
+        for senso in PHASE_ORDER:
+            state.radar[senso] = max(0.0, state.radar[senso] - PENALIDADE_ERRO_QUIZ)
+        _registrar(state, False)
+        state.shitsuke_pergunta.resolvido = True
+        state.shitsuke_perguntas_respondidas += 1
+        state.shitsuke_pergunta = content.next_shitsuke_pergunta(
+            state.seed, state.shitsuke_perguntas_respondidas
+        )
+        _avaliar_sustentacao(state, now)
+        return CommandOutcome(False, "boasvindas", "Tempo esgotado! O padrão está escorregando...")
+
+    escolha = Senso(_i(payload, "senso"))
+    correto = situacoes.is_correct(state.shitsuke_pergunta.situacao_id, escolha)
+    certo = situacoes.senso_correto(state.shitsuke_pergunta.situacao_id)
+    state.shitsuke_pergunta.resolvido = True
+    state.shitsuke_perguntas_respondidas += 1
+
+    if correto:
+        # Acerto: sobe todos os eixos do radar
+        for senso in PHASE_ORDER:
+            state.radar[senso] = min(100.0, state.radar[senso] + BUMP_ACERTO_QUIZ)
+        state.score += scoring.pontos_classificacao(True, state.streak)
+        _registrar(state, True)
+        msg = "Correto! Radar estabilizado. 🎯"
+    else:
+        # Erro: derruba todos os eixos
+        for senso in PHASE_ORDER:
+            state.radar[senso] = max(0.0, state.radar[senso] - PENALIDADE_ERRO_QUIZ)
+        _registrar(state, False)
+        msg = f"Era {certo.name} — radar caiu. Atenção!"
+
+    # Gera a próxima pergunta
+    state.shitsuke_pergunta = content.next_shitsuke_pergunta(
+        state.seed, state.shitsuke_perguntas_respondidas
+    )
+    _avaliar_sustentacao(state, now)
+    return CommandOutcome(correto, "comemora" if correto else "pergunta", msg)
+
+
 def _processar_shitsuke(state: GameState, now: float) -> None:
     """Decaimento contínuo + choques discretos (5s) + cronômetro de sustentação.
 
@@ -275,6 +361,11 @@ def _processar_shitsuke(state: GameState, now: float) -> None:
         state.last_decay_at = now
         state.shitsuke_last_shock_at = now
         return
+    # Garante que sempre há uma pergunta ativa (cobre sessões iniciadas antes do campo existir)
+    if state.shitsuke_pergunta is None or state.shitsuke_pergunta.resolvido:
+        state.shitsuke_pergunta = content.next_shitsuke_pergunta(
+            state.seed, state.shitsuke_perguntas_respondidas
+        )
     state.radar, state.last_decay_at = aplicar_decay(state.radar, state.last_decay_at, now, ativo=True)
     while now - state.shitsuke_last_shock_at >= INTERVALO_CHOQUE:
         a, b = setores_do_choque(state.seed, state.shitsuke_choques)
@@ -401,6 +492,9 @@ def _avancar_fase(state: GameState, now: float) -> CommandOutcome:
         state.shitsuke_sustain_since = None
         state.shitsuke_sustentado = False
         state.shitsuke_restante = DURACAO_DESAFIO
+        state.shitsuke_perguntas_respondidas = 0
+        # Gera a primeira pergunta do quiz de sustentação
+        state.shitsuke_pergunta = content.next_shitsuke_pergunta(state.seed, 0)
     return CommandOutcome(True, "aprova", f"Fase liberada: {state.current_phase.name}!")
 
 
