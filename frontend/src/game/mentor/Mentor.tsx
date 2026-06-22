@@ -10,8 +10,8 @@ import type { MentorMood } from '../../types'
 export const MENTOR_FRAME: Record<MentorMood, string> = {
   boasvindas: 'translate(5%, 4%) scale(1.1) rotate(0deg)',
   comemora:   'translate(10%, -8%) scale(1.3)  rotate(6deg)',
-  aprova:     'translate(3%, -5%)  scale(1.05) rotate(0deg)',
-  pergunta:   'translate(3%, -5%)  scale(1.05) rotate(0deg)',
+  aprova:     'translate(3%, 4%)   scale(1.05) rotate(0deg)',
+  pergunta:   'translate(3%, 8%)   scale(1.05) rotate(0deg)',
 }
 
 export function Mentor(): JSX.Element {
